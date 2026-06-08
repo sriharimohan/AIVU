@@ -59,18 +59,13 @@ Python
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(BASE_DIR, "fpl_analytics.db")
 
-### 📊 Sample Execution Output
-When executed via the terminal (python run_analytics.py), the engine processes the underlying metrics and prints the optimized matrix alongside trained feature coefficients:
-
---- EXPANDED DATA SCIENCE FEATURE MATRIX ---
-     FullName  Gameweek  CurrentWeekPoints  ExpectedGoals  ExpectedAssists  PreviousWeekPoints
-  Cole Palmer         1                  8           0.65             0.15                 0.0
-  Cole Palmer         2                  9           0.12             0.85                 8.0
-  Cole Palmer         3                 16           1.10             0.40                 9.0
-Erling Haaland         1                 17           1.85             0.00                 0.0
-Erling Haaland         2                  6           0.95             0.10                17.0
-Erling Haaland         3                  2           0.40             0.00                 6.0
-
+FullName,Gameweek,CurrentWeekPoints,ExpectedGoals,ExpectedAssists,PreviousWeekPoints
+Cole Palmer,1,8,0.65,0.15,0.0
+Cole Palmer,2,9,0.12,0.85,8.0
+Cole Palmer,3,16,1.10,0.40,9.0
+Erling Haaland,1,17,1.85,0.00,0.0
+Erling Haaland,2,6,0.95,0.10,17.0
+Erling Haaland,3,2,0.40,0.00,6.0
 --- MODEL PERFORMANCE METRICS ---
 Mean Absolute Error (MAE): 1.1163 points
 Learned Weights (PrevPoints, xG, xA, RollingForm): [-0.1155, 9.7219, 11.6797, 4.3120]
