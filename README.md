@@ -68,6 +68,7 @@ DB_PATH = os.path.join(BASE_DIR, "fpl_analytics.db")
 | Erling Haaland | 2 | 6 | 0.95 | 0.10 | 17.0 |
 | Erling Haaland | 3 | 2 | 0.40 | 0.00 | 6.0 |
 
+```text
 --- MODEL PERFORMANCE METRICS ---
 Mean Absolute Error (MAE): 1.1163 points
 Learned Weights (PrevPoints, xG, xA, RollingForm): [-0.1155, 9.7219, 11.6797, 4.3120]
@@ -85,3 +86,4 @@ Bash
 python run_analytics.py
 
 Developed independently by Srihari Mohan as part of a specialized portfolio in production-grade Sports Analytics and Analytics Engineering.
+```
