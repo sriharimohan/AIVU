@@ -75,15 +75,20 @@ Learned Weights (PrevPoints, xG, xA, RollingForm): [-0.1155, 9.7219, 11.6797, 4.
 ```
 
 🚀 Installation & Local ExecutionClone the repository:
+```python
 Bash
 git clone [https://github.com/sriharimohan/AIVU.git]
+```
 
 Install required analytics dependencies:
+```python
 Bash
 pip install pandas scikit-learn
-
+```
 Run the dynamic pipeline engine:
+```python
 Bash
 python run_analytics.py
+```
 
 Developed independently by Srihari Mohan as part of a specialized portfolio in production-grade Sports Analytics and Analytics Engineering.
