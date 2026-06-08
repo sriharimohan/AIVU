@@ -72,6 +72,7 @@ DB_PATH = os.path.join(BASE_DIR, "fpl_analytics.db")
 --- MODEL PERFORMANCE METRICS ---
 Mean Absolute Error (MAE): 1.1163 points
 Learned Weights (PrevPoints, xG, xA, RollingForm): [-0.1155, 9.7219, 11.6797, 4.3120]
+```
 
 🚀 Installation & Local ExecutionClone the repository:
 Bash
@@ -86,4 +87,3 @@ Bash
 python run_analytics.py
 
 Developed independently by Srihari Mohan as part of a specialized portfolio in production-grade Sports Analytics and Analytics Engineering.
-```
