@@ -55,10 +55,11 @@ To prevent overfitting and guarantee real-world generalization capability, the d
 ### 4. Cross-Platform Execution Safety (os Path Decoupling)
 To ensure the codebase can be instantly cloned and executed on any operating system (Windows, Mac, or Linux cloud servers) without configuration adjustments, all directory tracking is handled dynamically at runtime using Python's built-in os module:
 
+Python
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(BASE_DIR, "fpl_analytics.db")
 
-📊 Sample Execution Output
+### 📊 Sample Execution Output
 When executed via the terminal (python run_analytics.py), the engine processes the underlying metrics and prints the optimized matrix alongside trained feature coefficients:
 
 --- EXPANDED DATA SCIENCE FEATURE MATRIX ---
@@ -74,14 +75,17 @@ Erling Haaland         3                  2           0.40             0.00     
 Mean Absolute Error (MAE): 1.1163 points
 Learned Weights (PrevPoints, xG, xA, RollingForm): [-0.1155, 9.7219, 11.6797, 4.3120]
 
-
 🚀 Installation & Local Execution
 Clone the repository:
-git clone [https://github.com/sriharimohan/AIVU.git](https://github.com/sriharimohan/AIVU.git)
+
+Bash
+git clone https://github.com/sriharimohan/AIVU.git
 cd AIVU
-
 Install required analytics dependencies:
-pip install pandas scikit-learn
 
+Bash
+pip install pandas scikit-learn
 Run the dynamic pipeline engine:
+
+Bash
 python run_analytics.py
