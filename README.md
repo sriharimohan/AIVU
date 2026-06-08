@@ -41,8 +41,9 @@ SELECT
     ) AS RollingFormAverage
 FROM fact_player_gameweek_performance f
 JOIN dim_players p ON f.PlayerID = p.PlayerID;
+'''
 
-3. Machine Learning Feature Matrix & Validation
+### 3. Machine Learning Feature Matrix & Validation
 The calculated rolling form metrics are dynamically injected into a Scikit-Learn multi-feature regression matrix (X) alongside core performance threat vectors:
 
 Input Features: ['PreviousWeekPoints', 'ExpectedGoals', 'ExpectedAssists', 'RollingFormAverage']
@@ -54,15 +55,12 @@ To prevent overfitting and guarantee real-world generalization capability, the d
 4. Cross-Platform Execution Safety (os Path Decoupling)
 To ensure the codebase can be instantly cloned and executed on any operating system (Windows, Mac, or Linux cloud servers) without configuration adjustments, all directory tracking is handled dynamically at runtime using Python's built-in os module:
 
-Python
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(BASE_DIR, "fpl_analytics.db")
-This entirely protects the application against working-directory drift and runtime file-not-found crashes.
 
 📊 Sample Execution Output
 When executed via the terminal (python run_analytics.py), the engine processes the underlying metrics and prints the optimized matrix alongside trained feature coefficients:
 
-Plaintext
 --- EXPANDED DATA SCIENCE FEATURE MATRIX ---
      FullName  Gameweek  CurrentWeekPoints  ExpectedGoals  ExpectedAssists  PreviousWeekPoints
   Cole Palmer         1                  8           0.65             0.15                 0.0
@@ -75,17 +73,15 @@ Erling Haaland         3                  2           0.40             0.00     
 --- MODEL PERFORMANCE METRICS ---
 Mean Absolute Error (MAE): 1.1163 points
 Learned Weights (PrevPoints, xG, xA, RollingForm): [-0.1155, 9.7219, 11.6797, 4.3120]
+
+
 🚀 Installation & Local Execution
 Clone the repository:
-
-Bash
 git clone [https://github.com/sriharimohan/AIVU.git](https://github.com/sriharimohan/AIVU.git)
 cd AIVU
+
 Install required analytics dependencies:
-
-Bash
 pip install pandas scikit-learn
-Run the dynamic pipeline engine:
 
-Bash
+Run the dynamic pipeline engine:
 python run_analytics.py
