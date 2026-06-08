@@ -52,7 +52,7 @@ Target Variable: ['CurrentWeekPoints']
 
 To prevent overfitting and guarantee real-world generalization capability, the data is passed through a strict 80/20 train-test validation split before evaluating baseline metrics like Mean Absolute Error (MAE).
 
-4. Cross-Platform Execution Safety (os Path Decoupling)
+### 4. Cross-Platform Execution Safety (os Path Decoupling)
 To ensure the codebase can be instantly cloned and executed on any operating system (Windows, Mac, or Linux cloud servers) without configuration adjustments, all directory tracking is handled dynamically at runtime using Python's built-in os module:
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
