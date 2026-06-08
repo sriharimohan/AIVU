@@ -55,6 +55,7 @@ To ensure the codebase can be instantly cloned and executed on any operating sys
 ```python
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(BASE_DIR, "fpl_analytics.db")
+```
 
 📊 Sample Execution OutputWhen executed via the terminal (python run_analytics.py), the engine processes the underlying metrics and prints the optimized matrix alongside trained feature coefficients:
 
