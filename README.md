@@ -41,7 +41,7 @@ SELECT
     ) AS RollingFormAverage
 FROM fact_player_gameweek_performance f
 JOIN dim_players p ON f.PlayerID = p.PlayerID;
-'''
+```
 
 ### 3. Machine Learning Feature Matrix & Validation
 The calculated rolling form metrics are dynamically injected into a Scikit-Learn multi-feature regression matrix (X) alongside core performance threat vectors:
