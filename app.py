@@ -1,171 +1,146 @@
-import streamlit as st
-import sqlite3
-import pandas as pd
-import numpy as np  # Fixed: changed 'mp' to 'np'
 import os
-import joblib
-import matplotlib.pyplot as plt  # Fixed: changed 'matplotlib as plt' to 'matplotlib.pyplot as plt'
-from mplsoccer import VerticalPitch
+import pickle
+import sqlite3
+import numpy as np
+import pandas as pd
+import streamlit as st
+import matplotlib.pyplot as plt
+from mplsoccer import Pitch
 
-# Environment setup
-PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
-DB_PATH = os.path.join(PROJECT_DIR, "aivu_analytics.db")
-MODEL_PATH = os.path.join(PROJECT_DIR, "aivu_pipeline.pkl")
-
-# Browser configuration
+# ------------------------------------------------------------------
+# 1. Page Configuration & Custom Styling
+# ------------------------------------------------------------------
 st.set_page_config(
-    page_title="AIVU | Sports Analytics & Predictive Engine",
+    page_title="AIVU | Sports Analytics Engine",
     page_icon="⚽",
     layout="wide"
 )
 
-# Custom namespace for unpickling our matrix model
-class AIVULinearRegression:
-    def __init__(self):
-        self.weights = None
-        self.intercept = None
-    def predict(self, X):
-        return np.dot(X, self.weights) + self.intercept
+st.title("⚽ AIVU — Advanced Football Performance Engine")
+st.markdown("Closed-form Ridge OLS matrix projections and spatial event analysis.")
 
-# Helper function to query the database safely
-def run_query(query, params=()):
+# ------------------------------------------------------------------
+# 2. Safe Model Artifact Loading
+# ------------------------------------------------------------------
+MODEL_PATH = os.path.join("models", "aivu_pipeline.pkl")
+
+@st.cache_resource
+def load_aivu_model():
+    if not os.path.exists(MODEL_PATH):
+        st.error(f"⚠️ Model file missing at '{MODEL_PATH}'. Please run `python run_analytics.py` first.")
+        st.stop()
+    
     try:
-        conn = sqlite3.connect(DB_PATH)
-        df = pd.read_sql_query(query, conn, params=params)
-        conn.close()
-        return df
-    except sqlite3.OperationalError as e:
-        st.error(f"Database error: {e}")
-        return pd.DataFrame()
-
-st.title("⚽ AIVU : Sports Analytics & Predictive Engine")
-st.markdown("---")
-
-# Sidebar configuration
-st.sidebar.header("Model Configuration")
-model_loaded = False
-if os.path.exists(MODEL_PATH):
-    try:
-        model = joblib.load(MODEL_PATH)
-        st.sidebar.success("Custom ML Engine Active")
-        model_loaded = True
+        with open(MODEL_PATH, "rb") as f:
+            payload = pickle.load(f)
+        return payload
     except Exception as e:
-        st.sidebar.error(f"Pipeline load failed: {e}")
-else:
-    st.sidebar.warning("Model pkl not found. Run predictive_model.py!")
+        st.error(f"⚠️ Could not read model artifact: {e}")
+        st.stop()
 
-st.subheader("System-Wide Ingestion Statistics")
-# Fixed SQL syntax error (removed extra closing parenthesis and fixed table name spelling)
-stats_df = run_query("""
-    SELECT
-        COUNT(DISTINCT player_id) as total_players,
-        COUNT(*) as total_matches,
-        SUM(actual_points) as total_points
-    FROM match_performance
-""")
+# Initialize global payload variables cleanly
+model_payload = load_aivu_model()
+beta_weights = model_payload["weights"]
+feature_names = model_payload["feature_names"]
+df_perf = model_payload["sample_data"]
 
-if not stats_df.empty and stats_df['total_players'][0] > 0:
-    col1, col2, col3 = st.columns(3)
-    col1.metric("Active Players Tracked", int(stats_df['total_players'][0]))
-    col2.metric("Match Profiles Processed", int(stats_df['total_matches'][0]))
-    col3.metric("Total FPL Points Evaluated", int(stats_df['total_points'][0]))                                                   
+# ------------------------------------------------------------------
+# 3. Sidebar — Player Selection & Controls
+# ------------------------------------------------------------------
+st.sidebar.header("🔍 Player Selection")
+
+player_list = sorted(df_perf["player_name"].dropna().unique().tolist())
+selected_player = st.sidebar.selectbox("Select Player", player_list)
+
+# Filter dataset for selected player
+player_data = df_perf[df_perf["player_name"] == selected_player].sort_values("gameweek")
+
+if player_data.empty:
+    st.warning("No performance records found for this player.")
+    st.stop()
+
+player_pos = player_data["position"].iloc[0] if "position" in player_data.columns else "Unknown"
+st.sidebar.markdown(f"**Position:** {player_pos}")
+st.sidebar.markdown(f"**Matches Recorded:** {len(player_data)}")
+
+# ------------------------------------------------------------------
+# 4. KPI Summary Cards
+# ------------------------------------------------------------------
+st.subheader(f"📊 Summary Stats — {selected_player}")
+
+col1, col2, col3, col4 = st.columns(4)
+
+total_pts = player_data["actual_points"].sum() if "actual_points" in player_data.columns else 0
+avg_xg = player_data["expected_goals"].mean() if "expected_goals" in player_data.columns else 0.0
+avg_xa = player_data["expected_assists"].mean() if "expected_assists" in player_data.columns else 0.0
+avg_mins = player_data["minutes_played"].mean() if "minutes_played" in player_data.columns else 0.0
+
+col1.metric("Total Points", f"{int(total_pts)}")
+col2.metric("Avg Expected Goals (xG)", f"{avg_xg:.2f}")
+col3.metric("Avg Expected Assists (xA)", f"{avg_xa:.2f}")
+col4.metric("Avg Minutes Played", f"{avg_mins:.0f} mins")
+
 st.markdown("---")
 
-st.subheader("Player Profiling & Performance Intelligence")
-players_df = run_query("SELECT player_id, player_name, current_club, position FROM players")
+# ------------------------------------------------------------------
+# 5. OLS Model Prediction Engine
+# ------------------------------------------------------------------
+st.subheader("🤖 OLS Matrix Performance Projection")
 
-if not players_df.empty:
-    player_options = {row['player_name']: row['player_id'] for _, row in players_df.iterrows()}
-    selected_player_name = st.selectbox("Select Player Profile:", list(player_options.keys()))
-    selected_player_id = player_options[selected_player_name]  # Fixed: defined selected_player_id
+# Latest match feature values for prediction
+latest_row = player_data.iloc[-1]
+latest_x = [latest_row[col] for col in feature_names]
 
-    # Fixed: indented metadata and query execution to stay inside 'if not players_df.empty' block
-    meta = players_df[players_df['player_id'] == selected_player_id].iloc[0]
-    st.caption(f"🏁 **Club:** {meta['current_club']} | 🏃‍♂️ **Position:** {meta['position']}")
+# Matrix multiplication: Y_pred = beta0 + sum(beta_i * X_i)
+predicted_score = beta_weights[0] + np.dot(latest_x, beta_weights[1:])
 
-    # Fixed typos in SQL window function syntax: PRECEDING and CURRENT
-    perf_query = """
-    SELECT
-        gameweek as "GW",
-        minutes_played as "Minutes",
-        expected_goals as "xG",
-        expected_assists as "xA",
-        AVG(expected_goals) OVER (ORDER BY gameweek ROWS BETWEEN 2 PRECEDING AND CURRENT ROW) as "Rolling_xG",
-        AVG(expected_assists) OVER (ORDER BY gameweek ROWS BETWEEN 2 PRECEDING AND CURRENT ROW) as "Rolling_xA",
-        actual_points as "Actual_Points",
-        shot_x, shot_y, was_goal
-    FROM match_performance
-    WHERE player_id = ?;
-    """
-    perf_df = run_query(perf_query, params=(int(selected_player_id),))
+st.info(f"**Next Match Predicted Point Value:** **`{predicted_score:.2f}`** pts")
 
-    if not perf_df.empty:
-        col_table, col_ml, col_visuals = st.columns([1.6, 1.0, 1.4])
+with st.expander("View OLS Regression Model Weights (Beta Parameters)"):
+    weights_df = pd.DataFrame({
+        "Feature": ["Intercept (Bias)"] + feature_names,
+        "Beta Coefficient Weight": beta_weights
+    })
+    st.dataframe(weights_df, use_container_width=True)
 
-        with col_table:
-            st.markdown("#### Match-by-Match Logs")
-            st.dataframe(perf_df[["GW", "Minutes", "xG", "xA", "Actual_Points"]], hide_index=True)
+st.markdown("---")
 
-        with col_ml:
-            st.markdown("#### Predictive Inference")
-            if model_loaded:
-                latest = perf_df.iloc[-1]
-                rxG = float(latest["Rolling_xG"])
-                rxA = float(latest["Rolling_xA"])
+# ------------------------------------------------------------------
+# 6. Spatial Pitch Analysis & Heatmaps
+# ------------------------------------------------------------------
+st.subheader("🎯 Spatial Shot Location & Pitch Map")
 
-                input_vector = np.array([[rxG, rxA]])
-                predicted_pts = model.predict(input_vector)[0]
+fig, ax = plt.subplots(figsize=(10, 6))
+fig.patch.set_facecolor('#0e1117')
+ax.set_facecolor('#0e1117')
 
-                st.metric(
-                    label="Projected Points Next GW",
-                    value=f"{round(predicted_pts, 2)} Pts",
-                    delta=f"{round(predicted_pts - float(latest['Actual_Points']), 2)} vs Last Match"
-                )
-            else:
-                st.warning("Model engine offline.")
+pitch = Pitch(pitch_type='statsbomb', pitch_color='#0e1117', line_color='#c7d5e0')
+pitch.draw(ax=ax)
 
-        with col_visuals:
-            tab_shot, tab_trend = st.tabs(["🎯 Opta-Style Shot Map", "📈 Performance Trends"])
+# Filter spatial shot data if available in table
+shots = player_data[player_data["shot_x"].notnull()] if "shot_x" in player_data.columns else pd.DataFrame()
 
-            with tab_shot:
-                shots = perf_df.dropna(subset=['shot_x', 'shot_y'])
-                if not shots.empty:
-                    pitch = VerticalPitch(half=True, pitch_color="#0e1117", line_color="#c7d5cc", goal_type="box")
-                    fig, ax = pitch.draw(figsize=(5, 4))
-                    fig.patch.set_facecolor("#0e1117")
+if not shots.empty:
+    goals = shots[shots["was_goal"] == 1] if "was_goal" in shots.columns else pd.DataFrame()
+    non_goals = shots[shots["was_goal"] == 0] if "was_goal" in shots.columns else shots
 
-                    goals = shots[shots['was_goal'] == 1]
-                    misses = shots[shots['was_goal'] == 0]
+    # Non-goals (Red dots)
+    if not non_goals.empty:
+        pitch.scatter(non_goals["shot_x"], non_goals["shot_y"], ax=ax, c='red', alpha=0.6, s=100, label='Shot (Saved/Missed)')
+    
+    # Goals (Green dots)
+    if not goals.empty:
+        pitch.scatter(goals["shot_x"], goals["shot_y"], ax=ax, c='lime', alpha=0.9, s=200, marker='*', label='Goal')
+    
+    ax.legend(facecolor='#0e1117', edgecolor='none', labelcolor='white', loc='upper left')
+else:
+    ax.text(60, 40, "No spatial shot coordinates logged for this player.", color='white', ha='center', va='center', fontsize=12)
 
-                    # Fixed arguments and closing parenthesis syntax
-                    pitch.scatter(
-                        misses['shot_x'], misses['shot_y'], 
-                        s=misses['xG']*600, edgecolors='#ff4b4b', 
-                        facecolors='none', linewidth=1.5, ax=ax, label='Miss'
-                    )
-                    pitch.scatter(
-                        goals['shot_x'], goals['shot_y'], 
-                        s=goals['xG']*800, edgecolors='#00f0a2', 
-                        facecolors='#00f0a2', marker='*', linewidth=1.5, ax=ax, label='Goal'
-                    )
-                    ax.legend(facecolor='#0e1117', edgecolor='none', labelcolor='white', loc='lower center')
-                    st.pyplot(fig)
-                else:
-                    st.info("No spatial shot coordinates logged for this player.")
+st.pyplot(fig)
 
-            with tab_trend:
-                fig_trend, ax_trend = plt.subplots(figsize=(5, 3.5))
-                fig_trend.patch.set_facecolor('#0e1117')
-                ax_trend.set_facecolor('#0e1117')
-
-                ax_trend.plot(perf_df["GW"], perf_df["Actual_Points"], marker='o', color='#00f0a2', linewidth=2, label="Actual points")
-                # Fixed syntax error: changed 'linestyle==' to 'linestyle="--"'
-                ax_trend.plot(perf_df["GW"], perf_df["xG"]*4, linestyle='--', color='#ff4b4b', alpha=0.7, label="xG Profile")
-                
-                ax_trend.set_title("Performance & Underlying Metric Volatility", color='white', fontsize=10)
-                ax_trend.set_xlabel("Gameweek", color='white', fontsize=8)
-                ax_trend.set_ylabel("Metrics / Points", color='white', fontsize=8)
-                ax_trend.tick_params(colors='white', labelsize=8)
-                ax_trend.grid(color='#262730', linestyle=':', alpha=0.5)
-                ax_trend.legend(facecolor='#0e1117', edgecolor='none', labelcolor='white', fontsize=8)
-                st.pyplot(fig_trend)
+# ------------------------------------------------------------------
+# 7. Raw Match Logs Table
+# ------------------------------------------------------------------
+st.subheader("📜 Historical Match Performance Data")
+display_cols = [c for c in ["gameweek", "expected_goals", "expected_assists", "minutes_played", "actual_points", "previous_week_points"] if c in player_data.columns]
+st.dataframe(player_data[display_cols], use_container_width=True)

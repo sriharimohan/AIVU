@@ -1,26 +1,32 @@
 import sqlite3
 import os
+import pandas as pd
+import numpy as np
+from statsbombpy import sb
 
-# 1. Dynamically locate the directory where this script runs
 PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(PROJECT_DIR, "aivu_analytics.db")
 
-def populate_database():
-    # Establish connection
+def ingest_data():
+    print("🌐 Connecting to StatsBomb Open Data API...")
+    
+    # Competition ID 43 = FIFA World Cup, Season ID 106 = 2022 Tournament
+    comp_id = 43
+    season_id = 106
+    
+    matches = sb.matches(competition_id=comp_id, season_id=season_id)
+    print(f"🏆 Found {len(matches)} real 2022 World Cup matches!")
+    
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    
-    # Enforce database schema constraints
     cursor.execute("PRAGMA foreign_keys = ON;")
-
-    print(f"🔄 Connected to database at: {DB_PATH}")
-    print("🚀 Initiating database setup & data ingestion...")
-
-    # -------------------------------------------------------------
-    # 2. SCHEMA DEFINITION LAYER (Creates tables if missing)
-    # -------------------------------------------------------------
+    
+    # Reset schema for clean ingestion
+    cursor.execute("DROP TABLE IF EXISTS match_performance;")
+    cursor.execute("DROP TABLE IF EXISTS players;")
+    
     cursor.execute("""
-    CREATE TABLE IF NOT EXISTS players (
+    CREATE TABLE players (
         player_id INTEGER PRIMARY KEY,
         player_name TEXT NOT NULL,
         position TEXT NOT NULL,
@@ -29,7 +35,7 @@ def populate_database():
     """)
 
     cursor.execute("""
-    CREATE TABLE IF NOT EXISTS match_performance (
+    CREATE TABLE match_performance (
         performance_id INTEGER PRIMARY KEY AUTOINCREMENT,
         player_id INTEGER,
         gameweek INTEGER,
@@ -43,47 +49,60 @@ def populate_database():
         FOREIGN KEY (player_id) REFERENCES players (player_id)
     );
     """)
-    print("✅ Database schema verified and ready.")
-
-    # -------------------------------------------------------------
-    # 3. DATA INGESTION LAYER
-    # -------------------------------------------------------------
-    # Player profiles
-    mock_players = [
-        (1, 'Srihari', 'Midfielder', 'Chennaiyin FC'),
-        (2, 'Jagdish', 'Striker', 'Bengaluru FC'),
-    ]
-
-    cursor.executemany("""
-        INSERT OR IGNORE INTO players VALUES (?, ?, ?, ?);
-    """, mock_players)
-    print(f"✅ Ingested {len(mock_players)} player dimension records.")
-
-    # Match Performance Logs with Spatial Coordinates (shot_x, shot_y, was_goal)
-    # Format: (performance_id, player_id, gameweek, xG, xA, mins, points, shot_x, shot_y, was_goal)
-    mock_matches = [
-        # Srihari (Player 1) Match Logs
-        (None, 1, 1, 0.1, 0.0, 90, 2, 105.0, 38.0, 0),
-        (None, 1, 2, 0.3, 0.1, 85, 5, 112.0, 41.0, 1),
-        (None, 1, 3, 0.5, 0.2, 90, 8, 114.0, 36.0, 1),
-        
-        # Jagdish (Player 2) Match Logs
-        (None, 2, 1, 0.2, 0.2, 90, 3, 98.0,  30.0, 0),
-        (None, 2, 2, 0.5, 0.3, 90, 6, 108.0, 44.0, 1),
-        (None, 2, 3, 0.4, 0.2, 80, 4, 102.0, 25.0, 0),
-        (None, 2, 4, 0.6, 0.4, 90, 7, 115.0, 40.0, 1)
-    ]
     
-    # Insert performance metrics (matching 10 table columns)
-    cursor.executemany("""
-        INSERT INTO match_performance VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    """, mock_matches)
-    print(f"✅ Ingested {len(mock_matches)} performance transaction records.")
+    target_matches = matches['match_id'].tolist()
+    
+    player_dict = {}
+    performance_records = []
+    
+    print("⏳ Parsing event streams for spatial shot vectors and xG metrics...")
+    
+    gameweek_counter = 1
+    for match_id in target_matches:
+        try:
+            events = sb.events(match_id=match_id)
+            shots = events[events['type'] == 'Shot'].copy()
+            
+            for _, shot in shots.iterrows():
+                p_id = shot.get('player_id')
+                p_name = shot.get('player')
+                team_name = shot.get('team')
+                position = shot.get('position', 'Forward')
+                
+                if pd.isna(p_id) or pd.isna(p_name):
+                    continue
+                
+                p_id = int(p_id)
+                if p_id not in player_dict:
+                    player_dict[p_id] = (p_id, str(p_name), str(position), str(team_name))
+                
+                xg = float(shot['shot_statsbomb_xg']) if 'shot_statsbomb_xg' in shot and not pd.isna(shot['shot_statsbomb_xg']) else 0.05
+                loc = shot.get('location')
+                shot_x = float(loc[0]) if isinstance(loc, list) and len(loc) >= 2 else 105.0
+                shot_y = float(loc[1]) if isinstance(loc, list) and len(loc) >= 2 else 34.0
+                
+                outcome = shot.get('shot_outcome')
+                was_goal = 1 if outcome == 'Goal' else 0
+                actual_pts = 6 if was_goal else 2
+                
+                performance_records.append((
+                    None, p_id, gameweek_counter, round(xg, 2), 0.10, 90, actual_pts, shot_x, shot_y, was_goal
+                ))
+            
+            gameweek_counter += 1
+        except Exception as e:
+            print(f"⚠️ Skipped match {match_id}: {e}")
+            continue
 
-    # Commit transactions cleanly
+    cursor.executemany("INSERT OR IGNORE INTO players VALUES (?, ?, ?, ?);", list(player_dict.values()))
+    print(f"✅ Ingested {len(player_dict)} real player dimension records!")
+
+    cursor.executemany("INSERT INTO match_performance VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);", performance_records)
+    print(f"✅ Ingested {len(performance_records)} real spatial performance logs!")
+
     conn.commit()
     conn.close()
-    print("🏁 Data ingestion transaction committed and connection closed cleanly.")
+    print("🏁 2022 World Cup ingestion pipeline complete!")
 
 if __name__ == "__main__":
-    populate_database()
+    ingest_data()

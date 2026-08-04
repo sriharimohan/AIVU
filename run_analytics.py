@@ -1,60 +1,86 @@
-import sqlite3
-import pandas as pd
 import os
-from sklearn.linear_model import LinearRegression
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import mean_absolute_error
+import pickle
+import sqlite3
+import numpy as np
+import pandas as pd
 
-# --- STEP 1: DYNAMIC PATH AND DATA INGESTION ---
-# Automatically resolve paths to avoid Windows directory drift
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DB_PATH = os.path.join(BASE_DIR, "fpl_analytics.db")
+# 1. Connect to Database & Run SQL Query with LAG Window Function
+DB_PATH = "aivu_analytics.db"
+
+if not os.path.exists(DB_PATH):
+    raise FileNotFoundError(f"Database file '{DB_PATH}' not found.")
 
 conn = sqlite3.connect(DB_PATH)
 
-# Expanded SQL Query to select underlying advanced performance metrics
-query = """
+sql_query = """
 SELECT 
-    p.FullName,
-    f.Gameweek,
-    f.TotalPoints AS CurrentWeekPoints,
-    f.ExpectedGoals,
-    f.ExpectedAssists,
-    LAG(f.TotalPoints, 1) OVER (PARTITION BY f.PlayerID ORDER BY f.Gameweek) AS PreviousWeekPoints
-FROM fact_player_gameweek_performance f
-JOIN dim_players p ON f.PlayerID = p.PlayerID;
+    m.player_id,
+    p.player_name,
+    p.position,
+    m.gameweek,
+    m.expected_goals,
+    m.expected_assists,
+    m.minutes_played,
+    m.actual_points,
+    m.shot_x,
+    m.shot_y,
+    m.was_goal,
+    LAG(m.actual_points, 1) OVER (
+        PARTITION BY m.player_id 
+        ORDER BY m.gameweek
+    ) AS previous_week_points
+FROM match_performance m
+JOIN players p ON m.player_id = p.player_id;
 """
-df = pd.read_sql_query(query, conn)
+
+df = pd.read_sql_query(sql_query, conn)
 conn.close()
 
-# --- STEP 2: PANDAS DATA CLEANING ---
-# Handle the missing lag value anomaly for Gameweek 1 records
-df['PreviousWeekPoints'] = df['PreviousWeekPoints'].fillna(0)
+# 2. Handle missing values
+df["previous_week_points"] = df["previous_week_points"].fillna(0)
 
-# --- STEP 3: ADVANCED MACHINE LEARNING MATRIX ---
-print("\n--- EXPANDED DATA SCIENCE FEATURE MATRIX ---")
-print(df.to_string(index=False))
+feature_cols = ["expected_goals", "expected_assists", "minutes_played", "previous_week_points"]
+for col in feature_cols:
+    df[col] = df[col].fillna(0.0)
 
-# Define our expanded multi-feature matrix (X) and our target output (y)
-X = df[['PreviousWeekPoints', 'ExpectedGoals', 'ExpectedAssists']]
-y = df['CurrentWeekPoints']
+print(f"✅ Successfully loaded {len(df)} performance records from SQL database.")
 
-# Split data into 80% Training and 20% Evaluation testing splits
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+# 3. Closed-Form OLS Engine (Matrix Math)
+def train_ridge_ols(X, y, l2_penalty=0.01):
+    bias = np.ones((X.shape[0], 1))
+    X_design = np.hstack([bias, X])
+    
+    n_features = X_design.shape[1]
+    I = np.eye(n_features)
+    I[0, 0] = 0.0  # Don't penalize bias term
+    
+    XT_X = np.dot(X_design.T, X_design)
+    penalty_term = l2_penalty * I
+    XT_y = np.dot(X_design.T, y)
+    
+    weights = np.linalg.solve(XT_X + penalty_term, XT_y)
+    return weights
 
-# Train the model
-model = LinearRegression()
-model.fit(X_train, y_train)
+X_data = df[feature_cols].values
+y_data = df["actual_points"].values
 
-# Evaluate against real unseen validation sets
-y_pred = model.predict(X_test)
-error_rate = mean_absolute_error(y_test, y_pred)
+beta_weights = train_ridge_ols(X_data, y_data, l2_penalty=0.1)
 
-print("\n--- MODEL PERFORMANCE METRICS ---")
-print(f"Mean Absolute Error (MAE): {error_rate:.4f} points")
-print(f"Learned Weights (PrevPoints, xG, xA): {model.coef_}")
+print("\n--- Model Training Completed ---")
+print(f"Intercept (Bias): {beta_weights[0]:.4f}")
+for col, w in zip(feature_cols, beta_weights[1:]):
+    print(f"Weight for '{col}': {w:.4f}")
 
-# Test predict a custom player profile: 5 points last week, 0.85 xG, 0.45 xA
-mock_features = [[5.0, 0.85, 0.45]]
-prediction = model.predict(mock_features)
-print(f"AI Prediction for target player: {prediction[0]:.2f} points next week")
+# 4. Save Artifact for App
+os.makedirs("models", exist_ok=True)
+pipeline_artifact = {
+    "weights": beta_weights,
+    "feature_names": feature_cols,
+    "sample_data": df
+}
+
+artifact_path = os.path.join("models", "aivu_pipeline.pkl")
+with open(artifact_path, "wb") as f:
+    pickle.dump(pipeline_artifact, f)
+
+print(f"\n✅ Saved pipeline artifact to '{artifact_path}'. Ready for app.py!")
